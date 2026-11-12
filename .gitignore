@@ -1,0 +1,6 @@
+/app/dist/
+/app/dist-*/
+/reference/
+/release/
+*.log
+*.wixpdb

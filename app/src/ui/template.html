@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>项目文件回收站</title>
+<style>
+:root {
+  font-family: "Instrument Sans", "Microsoft YaHei UI", "Segoe UI", sans-serif;
+  color: #26243b;
+  background: #f6f5f9;
+  font-size: 13px;
+  --paper: #fcfbfd;
+  --rail: #efedf5;
+  --ink: #26243b;
+  --muted: #625e73;
+  --line: #dedbe8;
+  --accent: #564394;
+  --accent-soft: #eeebfa;
+  --mono: "IBM Plex Mono", Consolas, "Microsoft YaHei UI", monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; height: 100vh; display: grid; grid-template-rows: 62px minmax(0, 1fr) 56px; }
+h1, h2, p { margin: 0; }
+button, input, select, textarea { font: inherit; }
+button, select, input[type="search"], textarea {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 5px;
+  min-height: 34px;
+}
+button { padding: 0 12px; cursor: pointer; font-weight: 600; white-space: nowrap; }
+button:hover:not(:disabled) { border-color: #9587ba; background: var(--accent-soft); }
+button:disabled { color: #807a8e; background: #f0eef4; cursor: default; }
+:focus-visible { outline: 2px solid #745bbd; outline-offset: 2px; }
+select, input[type="search"], textarea { width: 100%; min-width: 0; }
+select { padding: 0 25px 0 9px; text-overflow: ellipsis; }
+input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; cursor: pointer; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.masthead {
+  background: #2d2745;
+  color: #f8f5ff;
+  display: grid;
+  grid-template-columns: minmax(max-content, 200px) minmax(180px, 400px) auto;
+  align-items: center;
+  column-gap: 22px;
+  padding: 0 20px;
+}
+.brand { display: flex; align-items: center; gap: 11px; }
+.brand h1 { font-size: 17px; font-weight: 700; letter-spacing: .025em; }
+.archive-mark { width: 29px; height: 29px; flex: none; display: grid; place-items: center; background: #dcd2ff; border-radius: 6px; }
+.archive-mark::before { content: ""; display: block; width: 13px; height: 11px; border: 1.5px solid #483979; border-top-width: 4px; border-radius: 1px 1px 3px 3px; }
+.search { position: relative; }
+.search::before { content: ""; position: absolute; pointer-events: none; width: 8px; height: 8px; border: 1.5px solid #d7cdeb; border-radius: 50%; top: 10px; left: 12px; }
+.search::after { content: ""; position: absolute; pointer-events: none; width: 6px; height: 1.5px; background: #d7cdeb; rotate: 45deg; top: 21px; left: 20px; }
+.search input { color: #fff; background: #403757; border-color: #655a7a; padding: 0 10px 0 34px; }
+.search input::placeholder { color: #d3c8e6; }
+#refresh { justify-self: end; background: transparent; border-color: #786d90; color: #f8f5ff; }
+#refresh:hover { background: #4b4065; border-color: #a697c1; }
+.layout { min-height: 0; display: grid; grid-template-columns: 186px minmax(0, 1.55fr) minmax(260px, 1fr); }
+.filters, .list, .detail { min-width: 0; min-height: 0; }
+.filters { padding: 19px 14px; background: var(--rail); overflow: auto; border-right: 1px solid var(--line); }
+.filters h2, .inspector-heading { font-size: 13px; font-weight: 700; }
+.field { display: grid; gap: 5px; margin-top: 14px; }
+.field label { color: var(--muted); font-size: 12px; }
+.project-settings { margin-top: 18px; padding-top: 13px; border-top: 1px solid #d8d3e6; }
+.project-settings summary { color: #4d406f; font-weight: 600; cursor: pointer; }
+.project-settings textarea { margin: 10px 0 5px; padding: 7px; resize: vertical; }
+.errors { margin-top: 12px; color: #8c4a28; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.errors:empty { display: none; }
+.list { display: flex; flex-direction: column; background: var(--paper); border-right: 1px solid var(--line); }
+.toolbar { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 14px 16px 12px; }
+.toolbar h2 { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.toolbar select { width: auto; max-width: 48%; background: #f6f3fb; color: #493a76; }
+.columns {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 33px;
+  padding: 0 24px 0 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+#selectAll { background: transparent; border: 0; min-height: 28px; padding: 0 3px; color: #534382; }
+#selectAll:hover:not(:disabled) { background: var(--accent-soft); }
+#selectAll:disabled { color: #807a8e; }
+.items { position: relative; overflow: auto; flex: 1; min-height: 0; overflow-anchor: none; scrollbar-gutter: stable; }
+.item-window { position: absolute; top: 0; left: 0; right: 0; }
+.item-window > .row, .item-window > .group { height: var(--item-height); }
+.group {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 13px;
+  border-top: 1px solid #ddd7ee;
+  border-bottom: 1px solid #e5e0f0;
+  border-left: 3px solid #9d8bc7;
+  background: #f1edf8;
+  color: #4b3e70;
+}
+.group-heading { display: flex; justify-content: space-between; gap: 10px; }
+.group-count { flex: none; color: #645974; font-size: 11px; font-variant-numeric: tabular-nums; }
+.group-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; }
+.group > .group-line { font-size: 11px; font-weight: 400; color: #645974; }
+.row { display: grid; grid-template-columns: 15px 34px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 0 14px 0 17px; border-bottom: 1px solid #ece9f1; }
+.row:hover { background: #f6f3fa; }
+.row.active { background: #ece6f9; box-shadow: inset 3px 0 #6850a8; }
+.ext { display: block; overflow: hidden; text-overflow: ellipsis; text-align: center; border-radius: 3px; padding: 5px 2px; color: #514473; background: #eee9f6; font: 600 10px var(--mono); white-space: nowrap; }
+.ext[data-category="日志"] { color: #755321; background: #f6edda; }
+.ext[data-category="图片"] { color: #345b59; background: #e1eeeb; }
+.ext[data-category="缓存与临时文件"] { color: #6b526a; background: #f0e8ef; }
+.ext[data-category="数据与配置"] { color: #354c7e; background: #e7ecf8; }
+.rowtext { min-width: 0; overflow: hidden; }
+.name { display: block; max-width: 100%; min-height: auto; padding: 0; border: 0; background: transparent; text-align: left; font-weight: 700; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.name:hover:not(:disabled) { background: transparent; text-decoration: underline; }
+.sub, .size { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.sub { margin-top: 3px; overflow: hidden; text-overflow: ellipsis; }
+.size { font: 11px var(--mono); font-variant-numeric: tabular-nums; }
+.detail { display: flex; flex-direction: column; background: #f6f5f9; }
+.inspector-heading { padding: 17px 16px 14px; border-bottom: 1px solid var(--line); }
+#detail { min-height: 0; overflow: auto; padding: 15px 16px; }
+#detail h2 { font-size: 18px; line-height: 1.35; overflow-wrap: anywhere; }
+.detail-type { color: var(--muted); margin-top: 5px; }
+.location { margin: 13px 0; display: grid; gap: 4px; }
+.location dt, .meta dt, .mark label { color: var(--muted); font-size: 12px; }
+.location dd { margin: 0; font: 11px/1.55 var(--mono); overflow-wrap: anywhere; }
+.preview { background: #302943; color: #f2eefa; border-radius: 5px; padding: 12px; min-height: 116px; max-height: 255px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.55 var(--mono); }
+.preview-image { display: block; max-width: 100%; height: auto; margin: auto; }
+.meta { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 7px 10px; margin: 14px 0; }
+.meta dd { margin: 0; overflow-wrap: anywhere; }
+.mark { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; }
+.empty { padding: 28px 16px; color: var(--muted); line-height: 1.65; }
+#detail > .empty { padding: 12px 0; }
+.action-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 0 16px; border-top: 1px solid var(--line); background: #f8f7fb; }
+.selection, .actions { display: flex; align-items: center; gap: 8px; }
+.selected { color: #514768; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#clearSelection { border: 0; background: transparent; color: #57438b; min-height: 28px; }
+#clearSelection[hidden] { display: none; }
+.primary:not(:disabled) { background: var(--accent); color: #fff; border-color: var(--accent); }
+.primary:hover:not(:disabled) { background: #49347f; }
+.danger:not(:disabled) { color: #943849; border-color: #dfbac2; }
+.danger:hover:not(:disabled) { color: #7b2738; border-color: #be7382; background: #faedf0; }
+@media (max-width: 880px) {
+  .layout { grid-template-columns: 154px minmax(0, 1.3fr) minmax(218px, 1fr); }
+  .masthead { grid-template-columns: max-content minmax(150px, 1fr) auto; column-gap: 12px; padding-inline: 14px; }
+  .filters { padding-inline: 10px; }
+  .toolbar, #detail, .inspector-heading { padding-inline: 12px; }
+  .row { padding-inline: 10px; gap: 7px; }
+}
+@media (max-height: 500px) {
+  body { grid-template-rows: 52px minmax(0, 1fr) 48px; }
+  .filters { padding-block: 13px; }
+  .field { margin-top: 9px; }
+  .toolbar, .inspector-heading { padding-block: 9px; }
+}
+@media (max-width: 670px) {
+  .layout { grid-template-columns: 125px minmax(0, 1fr); grid-template-rows: minmax(110px, 1fr) minmax(95px, .65fr); }
+  .filters { grid-row: span 2; }
+  .detail { grid-column: 2; border-top: 1px solid var(--line); }
+  .inspector-heading { padding-block: 8px; }
+  .action-bar { padding-inline: 8px; }
+  .actions { gap: 4px; }
+  .actions button { padding-inline: 6px; }
+}
+</style>
+</head>
+<body>
+<header class="masthead">
+  <div class="brand"><span class="archive-mark" aria-hidden="true"></span><h1>项目文件回收站</h1></div>
+  <div class="search">
+    <label for="search" class="visually-hidden">搜索文件名或原路径</label>
+    <input id="search" type="search" placeholder="搜索文件名或原路径" autocomplete="off">
+  </div>
+  <button id="refresh" type="button">刷新回收站</button>
+</header>
+<main class="layout">
+  <aside class="filters" aria-labelledby="filter-title">
+    <h2 id="filter-title">筛选文件</h2>
+    <div class="field"><label for="project">项目或原目录</label><select id="project"><option value="">全部目录</option></select></div>
+    <div class="field"><label for="kind">文件类别</label><select id="kind"><option value="">全部类别</option></select></div>
+    <div class="field"><label for="period">删除时间</label><select id="period"><option value="0">全部时间</option><option value="1">最近 24 小时</option><option value="7">最近 7 天</option><option value="30">最近 30 天</option></select></div>
+    <div class="field"><label for="batch">删除批次</label><select id="batch"><option value="">全部批次</option></select></div>
+    <details class="project-settings">
+      <summary>指定项目目录</summary>
+      <label for="projectRoots" class="visually-hidden">项目目录，每行一个完整路径</label>
+      <textarea id="projectRoots" rows="3" placeholder="每行一个完整路径"></textarea>
+      <button id="saveRoots" type="button">应用目录</button>
+    </details>
+    <div id="errors" class="errors" role="status"></div>
+  </aside>
+  <section class="list" aria-labelledby="count">
+    <div class="toolbar">
+      <h2 id="count" aria-live="polite">正在读取…</h2>
+      <label for="view" class="visually-hidden">列表视图</label>
+      <select id="view"><option value="batch">按删除批次</option><option value="duplicates">仅看重复内容</option></select>
+    </div>
+    <div class="columns"><button id="selectAll" type="button" disabled>全选当前结果</button><span>大小</span></div>
+    <div id="items" class="items"><p class="empty">正在扫描回收站…</p></div>
+  </section>
+  <section class="detail" aria-labelledby="inspector-title">
+    <h2 class="inspector-heading" id="inspector-title">文件预览</h2>
+    <div id="detail"><p class="empty">选择文件名查看内容和原路径。</p></div>
+  </section>
+</main>
+<footer class="action-bar">
+  <div class="selection"><span class="selected" id="selected" aria-live="polite">已选 0 项</span><button type="button" id="clearSelection" hidden>清除选择</button></div>
+  <div class="actions">
+    <button class="primary" id="restore" type="button" disabled>恢复到原位置</button>
+    <button id="export" type="button" disabled>复制导出</button>
+    <button class="danger" id="delete" type="button" disabled>永久删除</button>
+  </div>
+</footer>
+<script>
+/* LOGIC */
+const $=id=>document.getElementById(id), bridge=window.chrome&&window.chrome.webview; let all=[], current='', selected=new Set(), marks={}, roots=[];
+function saveState(){post({cmd:'saveState',state:JSON.stringify({marks,roots})})}
+function post(obj){if(bridge)bridge.postMessage(obj)} function el(tag,cls,text){let x=document.createElement(tag);if(cls)x.className=cls;if(text!==undefined)x.textContent=text;return x} function date(t){return t?new Date((t-621355968000000000)/10000).toLocaleString('zh-CN'): '未知'}
+const holder = $('items');
+const spacer = el('div');
+spacer.setAttribute('aria-hidden', 'true');
+const itemWindow = el('div', 'item-window');
+const itemHeight = 52;
+const overscan = 8;
+itemWindow.style.setProperty('--item-height', itemHeight + 'px');
+
+let results = [];
+let hasScanned = false;
+let entries = [];
+let renderedStart = -1;
+let renderedEnd = -1;
+let scrollFrame = 0;
+let renderedRows = new Map();
+
+function groupFiles(items, keyFor) {
+  const groups = new Map();
+  for (const item of items) {
+    const key = keyFor(item);
+    let group = groups.get(key);
+    if (!group) {
+      group = {files: [], minTime: item.deletedTs, maxTime: item.deletedTs};
+      groups.set(key, group);
+    }
+    group.files.push(item);
+    group.minTime = Math.min(group.minTime, item.deletedTs);
+    group.maxTime = Math.max(group.maxTime, item.deletedTs);
+  }
+  return groups;
+}
+
+function replaceOptions(select, label, options) {
+  const previous = select.value;
+  const fragment = document.createDocumentFragment();
+  fragment.append(new Option(label, ''));
+  for (const option of options) fragment.append(option);
+  select.replaceChildren(fragment);
+  select.value = previous;
+  if (select.selectedIndex < 0) select.selectedIndex = 0;
+}
+
+function rebuild() {
+  all = groupItems(all, roots);
+  const projects = [...new Set(all.map(item => item.project))].sort();
+  replaceOptions($('project'), '全部目录', projects.map(project => new Option(project, project)));
+  const batches = groupFiles(all, item => item.batch);
+  replaceOptions($('batch'), '全部批次', Array.from(batches, ([key, group]) => {
+    const label = group.files[0].directory + '　' + date(group.minTime) + ' 至 ' + date(group.maxTime);
+    return new Option(label, key);
+  }));
+  updateResults(false);
+}
+
+function updateResults(resetScroll = true) {
+  const search = $('search').value.toLowerCase();
+  const project = $('project').value;
+  const batch = $('batch').value;
+  const category = $('kind').value;
+  const days = Number($('period').value);
+  const minTime = 621355968000000000 + (Date.now() - days * 86400000) * 10000;
+  const duplicatesOnly = $('view').value === 'duplicates';
+
+  results = all.filter(item =>
+    (!search || (item.name + ' ' + item.original).toLowerCase().includes(search)) &&
+    (!project || item.project === project) &&
+    (!batch || item.batch === batch) &&
+    (!category || item.category === category) &&
+    (!days || item.deletedTs >= minTime) &&
+    (!duplicatesOnly || item.duplicates > 1));
+  results.sort((a, b) => duplicatesOnly
+    ? a.hash.localeCompare(b.hash) || a.original.localeCompare(b.original)
+    : a.project.localeCompare(b.project) || b.deletedTs - a.deletedTs);
+
+  entries = [];
+  const groups = groupFiles(results, item => duplicatesOnly ? item.hash : item.batch);
+  for (const [key, group] of groups) {
+    const count = group.files.length + ' 个文件';
+    const title = duplicatesOnly ? '相同内容' : group.files[0].directory;
+    const subtitle = duplicatesOnly ? 'SHA-256 ' + key.slice(0, 12) + '…'
+      : date(group.minTime) + ' 至 ' + date(group.maxTime);
+    entries.push({title, subtitle, count});
+    for (const item of group.files) entries.push({item});
+  }
+
+  $('count').textContent = results.length + ' 个文件';
+  updateSelection();
+  if (!entries.length) {
+    const message = all.length ? '没有符合条件的文件。请调整搜索或筛选条件。' : '回收站中暂无可整理的文件。';
+    holder.replaceChildren(el('p', 'empty', message));
+    renderedRows.clear();
+    return;
+  }
+  if (spacer.parentNode !== holder) holder.replaceChildren(spacer, itemWindow);
+  spacer.style.height = entries.length * itemHeight + 'px';
+  if (resetScroll) holder.scrollTop = 0;
+  renderedStart = renderedEnd = -1;
+  renderViewport();
+}
+
+function updateSelection() {
+  $('selected').textContent = '已选 ' + selected.size + ' 项';
+  $('selectAll').disabled = !results.length;
+  $('clearSelection').hidden = !selected.size;
+  for (const id of ['restore', 'export', 'delete']) $(id).disabled = !selected.size;
+}
+
+function renderViewport() {
+  if (!entries.length) return;
+  const start = Math.max(0, Math.floor(holder.scrollTop / itemHeight) - overscan);
+  const end = Math.min(entries.length, Math.ceil((holder.scrollTop + holder.clientHeight) / itemHeight) + overscan);
+  if (start === renderedStart && end === renderedEnd) return;
+
+  const fragment = document.createDocumentFragment();
+  const nextRows = new Map();
+  for (let index = start; index < end; index++) {
+    const entry = entries[index];
+    if (entry.item) {
+      const row = createRow(entry.item);
+      nextRows.set(entry.item.path, row);
+      fragment.append(row);
+    } else {
+      const heading = el('div', 'group');
+      heading.title = entry.title + '\n' + entry.subtitle;
+      const headingLine = el('div', 'group-heading');
+      headingLine.append(el('span', 'group-line', entry.title), el('span', 'group-count', entry.count));
+      heading.append(headingLine, el('div', 'group-line', entry.subtitle));
+      fragment.append(heading);
+    }
+  }
+  itemWindow.style.transform = 'translateY(' + start * itemHeight + 'px)';
+  itemWindow.replaceChildren(fragment);
+  renderedRows = nextRows;
+  renderedStart = start;
+  renderedEnd = end;
+}
+
+function scheduleViewport() {
+  if (scrollFrame) return;
+  scrollFrame = requestAnimationFrame(() => {
+    scrollFrame = 0;
+    renderViewport();
+  });
+}
+holder.addEventListener('scroll', scheduleViewport, {passive: true});
+new ResizeObserver(scheduleViewport).observe(holder);
+
+function createRow(item) {
+  const row = el('div', 'row' + (current === item.path ? ' active' : ''));
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.checked = selected.has(item.path);
+  checkbox.setAttribute('aria-label', '选择 ' + item.name);
+  checkbox.onclick = event => event.stopPropagation();
+  checkbox.onchange = () => {
+    if (checkbox.checked) selected.add(item.path);
+    else selected.delete(item.path);
+    updateSelection();
+  };
+
+  const text = el('div', 'rowtext');
+  const name = el('button', 'name', item.name);
+  name.type = 'button';
+  name.title = item.name;
+  const metadata = [item.category, date(item.deletedTs)];
+  if (marks[item.path] && marks[item.path] !== '未标记') metadata.push(marks[item.path]);
+  if (item.duplicates > 1) metadata.push('相同 ' + item.duplicates + ' 份');
+  text.append(name, el('div', 'sub', metadata.join('　')));
+  const extension = item.name.match(/\.([^.]+)$/)?.[1] || '文件';
+  const badge = el('span', 'ext', extension.toUpperCase());
+  badge.dataset.category = item.category;
+  badge.title = item.category;
+  row.append(checkbox, badge, text, el('span', 'size', item.size));
+  row.onclick = () => {
+    renderedRows.get(current)?.classList.remove('active');
+    current = item.path;
+    row.classList.add('active');
+    showDetail(item);
+    post({cmd: 'preview', path: item.path});
+  };
+  return row;
+}
+function showDetail(item) {
+  const box = $('detail');
+  const location = el('dl', 'location');
+  location.append(el('dt', '', '原路径'), el('dd', '', item.original));
+  const meta = el('dl', 'meta');
+  const duplicateStatus = item.duplicates > 1 ? item.duplicates + ' 份内容相同' : '未发现重复';
+  const fields = [
+    ['删除时间', date(item.deletedTs)],
+    ['项目', item.project],
+    ['重复内容', item.hash ? duplicateStatus : '哈希读取失败'],
+    ['来源', '来源未知'],
+  ];
+  for (const [label, value] of fields) meta.append(el('dt', '', label), el('dd', '', value));
+
+  const mark = el('div', 'mark');
+  const label = el('label', '', '标记');
+  label.htmlFor = 'fileMark';
+  const select = document.createElement('select');
+  select.id = 'fileMark';
+  for (const value of ['未标记', '待复核', '保留']) select.add(new Option(value, value));
+  select.value = marks[item.path] || '未标记';
+  select.onchange = () => {
+    marks[item.path] = select.value;
+    saveState();
+    renderedStart = -1;
+    renderViewport();
+  };
+  mark.append(label, select);
+  const preview = el('div', 'preview', '正在读取…');
+  preview.setAttribute('aria-label', '文件内容');
+  preview.tabIndex = 0;
+  box.replaceChildren(el('h2', '', item.name), el('p', 'detail-type', item.category + '　' + item.size),
+    location, preview, meta, mark);
+  box.scrollTop = 0;
+}
+
+if (bridge) bridge.addEventListener('message', ({data}) => {
+  if (data.type === 'state') {
+    try {
+      const state = JSON.parse(data.data);
+      marks = state.marks || {};
+      roots = state.roots || [];
+      $('projectRoots').value = roots.join('\n');
+      if (hasScanned) rebuild();
+    } catch {}
+  } else if (data.type === 'items') {
+    hasScanned = true;
+    all = data.items;
+    const kinds = [...new Set(all.map(item => item.category))].sort((a, b) => a.localeCompare(b, 'zh-CN'));
+    replaceOptions($('kind'), '全部类别', kinds.map(kind => new Option(kind, kind)));
+    const paths = new Set(all.map(item => item.path));
+    selected = new Set([...selected].filter(path => paths.has(path)));
+    $('errors').textContent = data.errors?.length ? '部分内容无法读取\n' + data.errors.join('\n') : '';
+    rebuild();
+    const item = all.find(entry => entry.path === current);
+    if (item) {
+      showDetail(item);
+      post({cmd: 'preview', path: item.path});
+    } else {
+      current = '';
+      $('detail').replaceChildren(el('p', 'empty', '选择文件名查看内容和原路径。'));
+    }
+  } else if (data.type === 'preview' && data.path === current) {
+    const preview = $('detail').querySelector('.preview');
+    if (!preview) return;
+    if (data.image) {
+      const image = el('img', 'preview-image');
+      image.src = data.image;
+      image.alt = '图片预览';
+      preview.replaceChildren(image);
+    } else {
+      preview.textContent = data.data || '文件为空';
+    }
+  }
+});
+
+for (const id of ['search', 'project', 'batch', 'view', 'kind', 'period']) {
+  $(id).addEventListener('input', () => { if (hasScanned) updateResults(); });
+}
+$('saveRoots').onclick = () => {
+  roots = $('projectRoots').value.split(/\r?\n/).map(line => {
+    const path = line.trim();
+    return /^[a-z]:[\\/]$/i.test(path) ? path.slice(0, 2) : path.replace(/[\\/]+$/, '');
+  }).filter(Boolean);
+  saveState();
+  if (hasScanned) rebuild();
+};
+$('refresh').onclick = () => post({cmd: 'refresh'});
+$('selectAll').onclick = () => {
+  for (const item of results) selected.add(item.path);
+  for (const row of renderedRows.values()) row.querySelector('input').checked = true;
+  updateSelection();
+};
+$('clearSelection').onclick = () => {
+  selected.clear();
+  for (const row of renderedRows.values()) row.querySelector('input').checked = false;
+  updateSelection();
+  $('search').focus();
+};
+for (const id of ['restore', 'export', 'delete']) {
+  $(id).onclick = () => post({cmd: id === 'export' ? 'copyTo' : id, paths: [...selected]});
+}
+post({cmd: 'ready'});
+</script>
+</body>
+</html>
