@@ -1,0 +1,107 @@
+name: Release & Publish Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag / version (e.g. v0.2.0)'
+        required: false
+        default: 'v0.2.0'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release-and-package:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install WiX 5.0.2
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          wix --version
+
+      - name: Build MSI installer
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File .\app\package.ps1
+          $msi = Get-ChildItem .\release\*.msi | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $msi) { throw "No MSI produced" }
+          "MSI_PATH=$($msi.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MSI_NAME=$($msi.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } elseif ('${{ inputs.tag }}') { '${{ inputs.tag }}' } else { 'v0.2.0' }
+          $ver = $tag.TrimStart('v')
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "PKG_VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Built $($msi.Name) ($($msi.Length) bytes) for $tag (pkg $ver)"
+
+      - name: Ensure GitHub Release has MSI asset
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = $env:RELEASE_TAG
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag $env:MSI_PATH --title "$tag" --notes-file CHANGELOG.md
+          } else {
+            gh release upload $tag $env:MSI_PATH --clobber
+          }
+
+      - name: Pack MSI into GitHub Packages (NuGet)
+        shell: pwsh
+        run: |
+          $stage = Join-Path $env:RUNNER_TEMP "nupkg-stage"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          $owner = "${{ github.repository_owner }}"
+          $repoUrl = "https://github.com/${{ github.repository }}"
+          $readmePath = (Resolve-Path .\README.md).Path
+          $csproj = @"
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <NoWarn>NU5128</NoWarn>
+    <PackageId>ProjectRecycleBin.Installer</PackageId>
+    <Version>$($env:PKG_VERSION)</Version>
+    <Authors>$owner</Authors>
+    <Description>Windows 11 项目文件回收站（空间热力清理舱版）x64 MSI 安装包。</Description>
+    <RepositoryUrl>$repoUrl</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>$repoUrl</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$($env:MSI_PATH)" Pack="true" PackagePath="installer\$($env:MSI_NAME)" />
+    <None Include="$readmePath" Pack="true" PackagePath="\" />
+  </ItemGroup>
+</Project>
+"@
+          $projFile = Join-Path $stage "ProjectRecycleBin.Installer.csproj"
+          [IO.File]::WriteAllText($projFile, $csproj, (New-Object System.Text.UTF8Encoding $false))
+          dotnet pack $projFile -c Release -o $stage
+          $nupkg = Get-ChildItem $stage -Filter "*.nupkg" | Select-Object -First 1
+          if (-not $nupkg) { throw "No nupkg produced" }
+          "NUPKG_PATH=$($nupkg.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Packed $($nupkg.Name) ($($nupkg.Length) bytes)"
+
+      - name: Push installer package to GitHub Packages
+        shell: pwsh
+        run: |
+          $owner = "${{ github.repository_owner }}"
+          dotnet nuget add source "https://nuget.pkg.github.com/$owner/index.json" --name github --username $owner --password "${{ secrets.GITHUB_TOKEN }}" --store-password-in-clear-text
+          dotnet nuget push $env:NUPKG_PATH --source github --skip-duplicate
