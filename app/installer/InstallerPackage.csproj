@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <NoWarn>NU5128</NoWarn>
+    <PackageId>ProjectRecycleBin.Installer</PackageId>
+    <Version>$(PackageVersion)</Version>
+    <Authors>$(RepoOwner)</Authors>
+    <Description>Windows 11 项目文件回收站（空间热力清理舱版）x64 MSI 安装包。</Description>
+    <RepositoryUrl>$(RepoUrl)</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>$(RepoUrl)</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(MsiPath)" Pack="true" PackagePath="installer\$(MsiName)" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+</Project>

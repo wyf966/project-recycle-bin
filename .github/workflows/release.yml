@@ -63,38 +63,17 @@ jobs:
       - name: Pack MSI into GitHub Packages (NuGet)
         shell: pwsh
         run: |
-          $stage = Join-Path $env:RUNNER_TEMP "nupkg-stage"
-          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          $outDir = Join-Path $env:RUNNER_TEMP "nupkg-out"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
           $owner = "${{ github.repository_owner }}"
           $repoUrl = "https://github.com/${{ github.repository }}"
-          $readmePath = (Resolve-Path .\README.md).Path
-          $csproj = @"
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
-    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-    <IncludeBuildOutput>false</IncludeBuildOutput>
-    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
-    <NoWarn>NU5128</NoWarn>
-    <PackageId>ProjectRecycleBin.Installer</PackageId>
-    <Version>$($env:PKG_VERSION)</Version>
-    <Authors>$owner</Authors>
-    <Description>Windows 11 项目文件回收站（空间热力清理舱版）x64 MSI 安装包。</Description>
-    <RepositoryUrl>$repoUrl</RepositoryUrl>
-    <RepositoryType>git</RepositoryType>
-    <PackageProjectUrl>$repoUrl</PackageProjectUrl>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-  </PropertyGroup>
-  <ItemGroup>
-    <None Include="$($env:MSI_PATH)" Pack="true" PackagePath="installer\$($env:MSI_NAME)" />
-    <None Include="$readmePath" Pack="true" PackagePath="\" />
-  </ItemGroup>
-</Project>
-"@
-          $projFile = Join-Path $stage "ProjectRecycleBin.Installer.csproj"
-          [IO.File]::WriteAllText($projFile, $csproj, (New-Object System.Text.UTF8Encoding $false))
-          dotnet pack $projFile -c Release -o $stage
-          $nupkg = Get-ChildItem $stage -Filter "*.nupkg" | Select-Object -First 1
+          dotnet pack .\app\installer\InstallerPackage.csproj -c Release -o $outDir `
+            -p:PackageVersion=$env:PKG_VERSION `
+            -p:RepoOwner=$owner `
+            -p:RepoUrl=$repoUrl `
+            -p:MsiPath=$env:MSI_PATH `
+            -p:MsiName=$env:MSI_NAME
+          $nupkg = Get-ChildItem $outDir -Filter "*.nupkg" | Select-Object -First 1
           if (-not $nupkg) { throw "No nupkg produced" }
           "NUPKG_PATH=$($nupkg.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "Packed $($nupkg.Name) ($($nupkg.Length) bytes)"
